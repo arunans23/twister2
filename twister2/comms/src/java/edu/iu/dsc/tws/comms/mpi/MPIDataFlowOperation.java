@@ -278,6 +278,9 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
                              int flags, RoutingParameters routingParameters) {
     ArrayBlockingQueue<Pair<Object, MPISendMessage>> pendingSendMessages =
         pendingSendMessagesPerSource.get(source);
+    if (pendingSendMessages.remainingCapacity() == 0) {
+      return false;
+    }
     MPIMessage mpiMessage = new MPIMessage(source, type, MPIMessageDirection.OUT, this);
 
     int di = -1;
@@ -291,6 +294,7 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
     // now try to put this into pending
     boolean offer = pendingSendMessages.offer(
         new ImmutablePair<Object, MPISendMessage>(message, sendMessage));
+    mpiMessage.setSerializeQueueTime(System.currentTimeMillis());
     if (!offer) {
       sendAttempts++;
     } else {
@@ -335,6 +339,11 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           if (!receiveAccepted) {
             canProgress = false;
             break;
+          } else {
+            long serializeTime = mpiSendMessage.getMPIMessage().getSerializeQueueTime();
+            mpiSendMessage.getMPIMessage().setSerializeQueueTime(
+                System.currentTimeMillis() - serializeTime);
+            mpiSendMessage.getMPIMessage().setNetworkQueueTime(System.currentTimeMillis());
           }
         }
         if (canProgress) {
@@ -347,6 +356,10 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
         if (mpiSendMessage.getExternalSends().size() == 0) {
           pendingSendMessages.poll();
           continue;
+        }
+
+        if (mpiSendMessage.serializedState() != MPISendMessage.SendState.SERIALIZED) {
+          mpiSendMessage.getMPIMessage().setSendAcceptTime(System.currentTimeMillis());
         }
         //TODO: why build message after sent internally? is it for messages with multiple
         //TODO: destinations?
@@ -366,6 +379,15 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
               canProgress = false;
               break;
             } else {
+              long serializeTime = message.getMPIMessage().getSerializeQueueTime();
+              message.getMPIMessage().setSerializeQueueTime(
+                  System.currentTimeMillis() - serializeTime);
+              message.getMPIMessage().setNetworkQueueTime(System.currentTimeMillis());
+
+              long sendAcceptTime = message.getMPIMessage().getSendAcceptTime();
+              message.getMPIMessage().setSendAcceptTime(
+                  System.currentTimeMillis() - sendAcceptTime);
+
               sendCount++;
               mpiSendMessage.incrementAcceptedExternalSends();
               noOfExternalSends++;
@@ -438,6 +460,8 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           if (!receiver.receiveMessage(currentMessage, object)) {
             break;
           }
+//          long time = System.currentTimeMillis() - currentMessage.getStartTime();
+//          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
           currentMessage.release();
           pendingReceiveMessages.poll();
         } else if (state == MPIMessage.ReceivedState.RECEIVE) {
@@ -445,6 +469,8 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           if (!receiver.receiveMessage(currentMessage, object)) {
             break;
           }
+//          long time = System.currentTimeMillis() - currentMessage.getStartTime();
+//          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
           currentMessage.release();
           pendingReceiveMessages.poll();
         }
@@ -453,6 +479,7 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
       }
     }
   }
+
 
   /**
    * Progress the serializations
@@ -492,6 +519,45 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
         receiveProgress(pendingReceiveMessagesPerSource.get(receiveId));
         receiveProgressTracker.finish(receiveId);
       }
+    }
+  }
+
+  /**
+   * Progress the serializations
+   */
+  public void progress2() {
+//    if (partialSendAttempts > 1000000 || sendAttempts > 1000000) {
+//      String s = "";
+//      for (Map.Entry<Integer, Queue<MPIBuffer>> e : receiveBuffers.entrySet()) {
+//        s += e.getKey() + "-" + e.getValue().size() + " ";
+//      }
+//      LOG.info(String.format(
+//          "%d send count %d receive %d send release %d receive release %d %s %d %d",
+//          executor, sendCount, receiveCount, sendBufferReleaseCount,
+//          receiveBufferReleaseCount, s, sendsOfferred, sendsPartialOfferred));
+//      ((TWSMPIChannel) channel).setDebug(true);
+//    }
+    lock.lock();
+    try {
+      for (Map.Entry<Integer, ArrayBlockingQueue<Pair<Object, MPISendMessage>>> e
+          : pendingSendMessagesPerSource.entrySet()) {
+        int sendId = e.getKey();
+        sendProgress(e.getValue(), sendId);
+      }
+
+      for (Map.Entry<Integer, Queue<MPIMessage>> e : pendingReceiveDeSerializations.entrySet()) {
+        int deserializeId = e.getKey();
+        receiveDeserializeProgress(
+            pendingReceiveDeSerializations.get(deserializeId).poll(), deserializeId);
+      }
+
+      for (Map.Entry<Integer, Queue<Pair<Object, MPIMessage>>> e
+          : pendingReceiveMessagesPerSource.entrySet()) {
+        int receiveId = e.getKey();
+        receiveProgress(pendingReceiveMessagesPerSource.get(receiveId));
+      }
+    } finally {
+      lock.unlock();
     }
   }
 
@@ -585,6 +651,12 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
   @Override
   public void onSendComplete(int id, int messageStream, MPIMessage message) {
     // ok we don't have anything else to do
+    long time = System.currentTimeMillis() - message.getStartTime();
+    long netWorkTime = System.currentTimeMillis() - message.getNetworkQueueTime();
+//    LOG.log(Level.INFO, String.format(
+//        "%d send complete in time %d seri %d net %d accept %d netpost %d",
+//        executor, time, message.getSerializeQueueTime(), netWorkTime,
+//        message.getSendAcceptTime(), message.getPostSendTime()));
     message.release();
   }
 

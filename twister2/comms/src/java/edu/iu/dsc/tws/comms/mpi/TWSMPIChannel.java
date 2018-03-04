@@ -221,6 +221,8 @@ public class TWSMPIChannel implements TWSChannel {
       // post the send
       if (sendRequests != null) {
         postMessage(sendRequests);
+        sendRequests.message.setPostSendTime(
+            System.currentTimeMillis() - sendRequests.message.getNetworkQueueTime());
         waitForCompletionSends.add(sendRequests);
       }
     }

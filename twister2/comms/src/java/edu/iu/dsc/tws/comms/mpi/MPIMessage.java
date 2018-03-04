@@ -69,6 +69,16 @@ public class MPIMessage {
    */
   private int headerSize;
 
+  private long startTime = 0;
+
+  private long serializeQueueTime = 0;
+
+  private long networkQueueTime = 0;
+
+  private long sendAcceptTime = 0;
+
+  private long postSendTime = 0;
+
   public enum ReceivedState {
     INIT,
     DOWN,
@@ -93,6 +103,7 @@ public class MPIMessage {
     this.complete = false;
     this.type = messageType;
     this.receivedState = ReceivedState.INIT;
+    this.startTime = System.currentTimeMillis();
   }
 
   public List<MPIBuffer> getBuffers() {
@@ -160,6 +171,42 @@ public class MPIMessage {
       }
     }
     return false;
+  }
+
+  public void setPostSendTime(long time) {
+    this.postSendTime = time;
+  }
+
+  public long getPostSendTime() {
+    return postSendTime;
+  }
+
+  public long getSendAcceptTime() {
+    return sendAcceptTime;
+  }
+
+  public void setSendAcceptTime(long sendAcceptTime) {
+    this.sendAcceptTime = sendAcceptTime;
+  }
+
+  public long getStartTime() {
+    return startTime;
+  }
+
+  public long getSerializeQueueTime() {
+    return serializeQueueTime;
+  }
+
+  public long getNetworkQueueTime() {
+    return networkQueueTime;
+  }
+
+  public void setSerializeQueueTime(long serializeQueueTime) {
+    this.serializeQueueTime = serializeQueueTime;
+  }
+
+  public void setNetworkQueueTime(long networkQueueTime) {
+    this.networkQueueTime = networkQueueTime;
   }
 
   public boolean isComplete() {
