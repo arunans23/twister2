@@ -22,6 +22,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -460,8 +461,8 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           if (!receiver.receiveMessage(currentMessage, object)) {
             break;
           }
-//          long time = System.currentTimeMillis() - currentMessage.getStartTime();
-//          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
+          long time = System.currentTimeMillis() - currentMessage.getStartTime();
+          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
           currentMessage.release();
           pendingReceiveMessages.poll();
         } else if (state == MPIMessage.ReceivedState.RECEIVE) {
@@ -469,8 +470,8 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           if (!receiver.receiveMessage(currentMessage, object)) {
             break;
           }
-//          long time = System.currentTimeMillis() - currentMessage.getStartTime();
-//          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
+          long time = System.currentTimeMillis() - currentMessage.getStartTime();
+          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
           currentMessage.release();
           pendingReceiveMessages.poll();
         }
@@ -653,10 +654,10 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
     // ok we don't have anything else to do
     long time = System.currentTimeMillis() - message.getStartTime();
     long netWorkTime = System.currentTimeMillis() - message.getNetworkQueueTime();
-//    LOG.log(Level.INFO, String.format(
-//        "%d send complete in time %d seri %d net %d accept %d netpost %d",
-//        executor, time, message.getSerializeQueueTime(), netWorkTime,
-//        message.getSendAcceptTime(), message.getPostSendTime()));
+    LOG.log(Level.INFO, String.format(
+        "%d send complete in time %d seri %d net %d accept %d netpost %d",
+        executor, time, message.getSerializeQueueTime(), netWorkTime,
+        message.getSendAcceptTime(), message.getPostSendTime()));
     message.release();
   }
 
