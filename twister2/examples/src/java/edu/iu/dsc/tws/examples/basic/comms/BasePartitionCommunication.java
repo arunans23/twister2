@@ -126,7 +126,7 @@ public class BasePartitionCommunication implements IContainer {
       }
       FinalPartitionReciver finalPartitionRec = new FinalPartitionReciver();
       partition = channel.partition(newCfg, MessageType.BYTE, 2, sources,
-          dests, finalPartitionRec);
+          dests, finalPartitionRec, null);
       finalPartitionRec.setMap(expectedIds);
       // partition.setMemoryMapped(true);
 

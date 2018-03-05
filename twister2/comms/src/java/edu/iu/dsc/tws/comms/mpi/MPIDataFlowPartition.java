@@ -29,6 +29,7 @@ import com.google.common.collect.Table;
  import org.apache.commons.lang3.tuple.Pair;
 
 import edu.iu.dsc.tws.common.config.Config;
+import edu.iu.dsc.tws.comms.api.CompletionListener;
 import edu.iu.dsc.tws.comms.api.DataFlowOperation;
 import edu.iu.dsc.tws.comms.api.MessageHeader;
 import edu.iu.dsc.tws.comms.api.MessageReceiver;
@@ -73,7 +74,7 @@ public class MPIDataFlowPartition implements DataFlowOperation, MPIMessageReceiv
   private boolean isKeyed;
   private Lock lock = new ReentrantLock();
   private Table<Integer, Integer, RoutingParameters> routingParamCache = HashBasedTable.create();
-
+  private CompletionListener completionListener;
 
   /**
    * A place holder for keeping the internal and external destinations
@@ -87,21 +88,23 @@ public class MPIDataFlowPartition implements DataFlowOperation, MPIMessageReceiv
   public MPIDataFlowPartition(TWSChannel channel, Set<Integer> sourceTasks, Set<Integer> destTasks,
                               MessageReceiver receiver, PartitionStratergy partitionStratergy,
                               MessageType type, MessageType keyType) {
-    this(channel, sourceTasks, destTasks, receiver, partitionStratergy);
+    this(channel, sourceTasks, destTasks, receiver, null, partitionStratergy, type);
     this.isKeyed = true;
     this.keyType = keyType;
-    this.type = type;
   }
 
   public MPIDataFlowPartition(TWSChannel channel, Set<Integer> srcs,
                               Set<Integer> dests, MessageReceiver finalRcvr,
-                              PartitionStratergy stratergy) {
+                              CompletionListener listener,
+                              PartitionStratergy stratergy, MessageType msgType) {
     this.sources = srcs;
     this.destinations = dests;
     this.destinationIndex = new HashMap<>();
     this.destinationsList = new ArrayList<>(destinations);
     this.delegete = new MPIDataFlowOperation(channel);
     this.partitionStratergy = stratergy;
+    this.type = msgType;
+    this.completionListener = listener;
 
     for (int s : sources) {
       destinationIndex.put(s, 0);
@@ -188,6 +191,8 @@ public class MPIDataFlowPartition implements DataFlowOperation, MPIMessageReceiv
         sendRoutingParameters(s, d);
       }
     }
+
+    delegete.setCompletionListener(completionListener);
 
     delegete.init(cfg, t, taskPlan, edge,
         router.receivingExecutors(), router.isLastReceiver(), this,

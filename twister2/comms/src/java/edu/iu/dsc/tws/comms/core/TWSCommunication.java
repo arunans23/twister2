@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 import edu.iu.dsc.tws.common.config.Config;
+import edu.iu.dsc.tws.comms.api.CompletionListener;
 import edu.iu.dsc.tws.comms.api.DataFlowOperation;
 import edu.iu.dsc.tws.comms.api.MessageReceiver;
 import edu.iu.dsc.tws.comms.api.MessageType;
@@ -96,7 +97,7 @@ public interface TWSCommunication {
 
   DataFlowOperation partition(Map<String, Object> properties, MessageType type, int edge1,
                               Set<Integer> sourceTasks, Set<Integer> destTasks,
-                              MessageReceiver receiver);
+                              MessageReceiver receiver, CompletionListener listener);
 
   DataFlowOperation partition(Map<String, Object> properties, MessageType type,
                               MessageType keyType, int edge1,

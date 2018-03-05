@@ -22,13 +22,13 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 
 import edu.iu.dsc.tws.common.config.Config;
+import edu.iu.dsc.tws.comms.api.CompletionListener;
 import edu.iu.dsc.tws.comms.api.MessageHeader;
 import edu.iu.dsc.tws.comms.api.MessageType;
 import edu.iu.dsc.tws.comms.api.TWSChannel;
@@ -138,6 +138,8 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
   private int partialSendAttempts = 0;
   private int sendAttempts = 0;
 
+  private CompletionListener completionListener;
+
   public MPIDataFlowOperation(TWSChannel channel) {
     this.channel = channel;
   }
@@ -191,6 +193,10 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
     initSerializers();
 
     initProgressTrackers();
+  }
+
+  public void setCompletionListener(CompletionListener listener) {
+    this.completionListener = listener;
   }
 
   protected void initSerializers() {
@@ -461,8 +467,8 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           if (!receiver.receiveMessage(currentMessage, object)) {
             break;
           }
-          long time = System.currentTimeMillis() - currentMessage.getStartTime();
-          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
+//          long time = System.currentTimeMillis() - currentMessage.getStartTime();
+//          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
           currentMessage.release();
           pendingReceiveMessages.poll();
         } else if (state == MPIMessage.ReceivedState.RECEIVE) {
@@ -470,8 +476,8 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           if (!receiver.receiveMessage(currentMessage, object)) {
             break;
           }
-          long time = System.currentTimeMillis() - currentMessage.getStartTime();
-          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
+//          long time = System.currentTimeMillis() - currentMessage.getStartTime();
+//          LOG.log(Level.INFO, String.format("%d receive complete in %d", executor, time));
           currentMessage.release();
           pendingReceiveMessages.poll();
         }
@@ -654,10 +660,10 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
     // ok we don't have anything else to do
     long time = System.currentTimeMillis() - message.getStartTime();
     long netWorkTime = System.currentTimeMillis() - message.getNetworkQueueTime();
-    LOG.log(Level.INFO, String.format(
-        "%d send complete in time %d seri %d net %d accept %d netpost %d",
-        executor, time, message.getSerializeQueueTime(), netWorkTime,
-        message.getSendAcceptTime(), message.getPostSendTime()));
+//    LOG.log(Level.INFO, String.format(
+//        "%d send complete in time %d seri %d net %d accept %d netpost %d",
+//        executor, time, message.getSerializeQueueTime(), netWorkTime,
+//        message.getSendAcceptTime(), message.getPostSendTime()));
     message.release();
   }
 
@@ -671,6 +677,9 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           throw new RuntimeException("We should be able to offer the buffer");
         }
         receiveBufferReleaseCount++;
+        if (completionListener != null) {
+          completionListener.readReady(message.getHeader().getDestinationIdentifier(), list.size());
+        }
       }
     } else if (MPIMessageDirection.OUT == message.getMessageDirection()) {
       Queue<MPIBuffer> queue = sendBuffers;
@@ -681,6 +690,10 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
           throw new RuntimeException("We should be able to offer the buffer");
         }
         sendBufferReleaseCount++;
+        if (completionListener != null) {
+          completionListener.writeReady(
+              message.getHeader().getDestinationIdentifier(), queue.size());
+        }
       }
     }
   }

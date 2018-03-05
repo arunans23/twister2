@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.logging.Logger;
 
 import edu.iu.dsc.tws.common.config.Config;
+import edu.iu.dsc.tws.comms.api.CompletionListener;
 import edu.iu.dsc.tws.comms.api.DataFlowOperation;
 import edu.iu.dsc.tws.comms.api.MessageReceiver;
 import edu.iu.dsc.tws.comms.api.MessageType;
@@ -282,12 +283,13 @@ public class MPIDataFlowCommunication implements TWSCommunication {
   @Override
   public DataFlowOperation partition(Map<String, Object> properties, MessageType type, int edge1,
                                      Set<Integer> sourceTasks, Set<Integer> destTasks,
-                                     MessageReceiver receiver) {
+                                     MessageReceiver receiver, CompletionListener listener) {
     // merge with the user specified configuration, user specified will take precedence
     Config mergedCfg = Config.newBuilder().putAll(config).putAll(properties).build();
 
     MPIDataFlowPartition dataFlowOperation = new MPIDataFlowPartition(channel,
-        sourceTasks, destTasks, receiver, MPIDataFlowPartition.PartitionStratergy.DIRECT);
+        sourceTasks, destTasks, receiver, listener,
+        MPIDataFlowPartition.PartitionStratergy.DIRECT, type);
 
     dataFlowOperation.init(mergedCfg, type, instancePlan, edge1);
     return dataFlowOperation;
