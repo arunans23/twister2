@@ -9,33 +9,45 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-package edu.iu.dsc.tws.examples;
+package edu.iu.dsc.tws.comms.mpi.io;
 
-public class IntData {
-  private int[] data;
+public class PartitionData {
+  private byte[] data;
 
-  private int id;
+  private long time;
 
-  public IntData(int[] data) {
+  private long id;
+
+  public PartitionData(byte[] data, long time, long id) {
     this.data = data;
-  }
-
-  public IntData() {
-  }
-
-  public int getId() {
-    return id;
-  }
-
-  public void setId(int id) {
+    this.time = time;
     this.id = id;
   }
 
-  public int[] getData() {
+  public PartitionData() {
+  }
+
+  public byte[] getData() {
     return data;
   }
 
-  public void setData(int[] data) {
+  public long getTime() {
+    return time;
+  }
+
+  public long getId() {
+    return id;
+  }
+
+  public void setData(byte[] data) {
     this.data = data;
+  }
+
+  public void setTime(long time) {
+    this.time = time;
+  }
+
+  public void setId(long id) {
+    this.id = id;
   }
 }

@@ -30,6 +30,7 @@ import edu.iu.dsc.tws.comms.api.ReduceReceiver;
 import edu.iu.dsc.tws.comms.core.TWSCommunication;
 import edu.iu.dsc.tws.comms.core.TWSNetwork;
 import edu.iu.dsc.tws.comms.core.TaskPlan;
+import edu.iu.dsc.tws.comms.mpi.io.PartitionData;
 import edu.iu.dsc.tws.comms.mpi.io.reduce.ReduceStreamingFinalReceiver;
 import edu.iu.dsc.tws.comms.mpi.io.reduce.ReduceStreamingPartialReceiver;
 import edu.iu.dsc.tws.examples.IntData;
@@ -124,16 +125,19 @@ public class BaseReduceHLCommunication implements IContainer {
   private class MapWorker implements Runnable {
     private int task = 0;
     private int sendCount = 0;
+    private byte[] bytes;
     MapWorker(int task) {
       this.task = task;
+      bytes = new byte[1000];
     }
 
     @Override
     public void run() {
       try {
         LOG.log(Level.INFO, "Starting map worker: " + id);
-        IntData data = generateData();
-        for (int i = 0; i < 6000; i++) {
+        for (int i = 0; i < 10000; i++) {
+          PartitionData data = new PartitionData(bytes, System.nanoTime(), i);
+          data.setId(i);
           // lets generate a message
           while (!reduce.send(task, data, 0)) {
             // lets wait a litte and try again
@@ -194,6 +198,11 @@ public class BaseReduceHLCommunication implements IContainer {
 
     @Override
     public Object reduce(Object t1, Object t2) {
+      PartitionData d1 = (PartitionData) t1;
+      PartitionData d2 = (PartitionData) t2;
+      if (d1.getId() != d2.getId()) {
+        throw new RuntimeException("d1 != d2 " + d1.getId() + " " + d2.getId());
+      }
       return t1;
     }
   }

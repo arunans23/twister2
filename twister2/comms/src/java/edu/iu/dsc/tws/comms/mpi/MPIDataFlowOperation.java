@@ -36,6 +36,7 @@ import edu.iu.dsc.tws.comms.core.TaskPlan;
 import edu.iu.dsc.tws.comms.mpi.io.KeyedContent;
 import edu.iu.dsc.tws.comms.mpi.io.MessageDeSerializer;
 import edu.iu.dsc.tws.comms.mpi.io.MessageSerializer;
+import edu.iu.dsc.tws.comms.mpi.io.PartitionData;
 import edu.iu.dsc.tws.comms.mpi.io.SerializeState;
 import edu.iu.dsc.tws.comms.mpi.io.types.DataSerializer;
 import edu.iu.dsc.tws.comms.mpi.io.types.KeySerializer;
@@ -424,6 +425,9 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
     } else {
       Object object = messageDeSerializer.get(receiveId).build(currentMessage,
           currentMessage.getHeader().getEdge());
+      PartitionData data = (PartitionData) object;
+      LOG.info(String.format("%d deserialize from %d id %d", executor,
+          currentMessage.getHeader().getSourceId(), data.getId()));
       Queue<Pair<Object, MPIMessage>> pendingReceiveMessages =
           pendingReceiveMessagesPerSource.get(id);
 
@@ -438,17 +442,17 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
 
   private void receiveProgress(Queue<Pair<Object, MPIMessage>> pendingReceiveMessages) {
     while (pendingReceiveMessages.size() > 0) {
-      Pair<Object, MPIMessage> pair = pendingReceiveMessages.peek();
-      MPIMessage.ReceivedState state = pair.getRight().getReceivedState();
-      MPIMessage currentMessage = pair.getRight();
-      Object object = pair.getLeft();
-
-      if (state == MPIMessage.ReceivedState.INIT) {
-        currentMessage.incrementRefCount();
-      }
-
       lock.lock();
       try {
+        Pair<Object, MPIMessage> pair = pendingReceiveMessages.peek();
+        MPIMessage.ReceivedState state = pair.getRight().getReceivedState();
+        MPIMessage currentMessage = pair.getRight();
+        Object object = pair.getLeft();
+
+        if (state == MPIMessage.ReceivedState.INIT) {
+          currentMessage.incrementRefCount();
+        }
+
         if (state == MPIMessage.ReceivedState.DOWN || state == MPIMessage.ReceivedState.INIT) {
           currentMessage.setReceivedState(MPIMessage.ReceivedState.DOWN);
           if (!receiver.passMessageDownstream(object, currentMessage)) {
@@ -497,21 +501,26 @@ public class MPIDataFlowOperation implements MPIMessageListener, MPIMessageRelea
       }
     }
 
-    if (deserializeProgressTracker.canProgress()) {
-      int deserializeId = deserializeProgressTracker.next();
-      if (deserializeId != Integer.MIN_VALUE) {
-        receiveDeserializeProgress(
-            pendingReceiveDeSerializations.get(deserializeId).poll(), deserializeId);
-        deserializeProgressTracker.finish(deserializeId);
+    lock.lock();
+    try {
+      if (deserializeProgressTracker.canProgress()) {
+        int deserializeId = deserializeProgressTracker.next();
+        if (deserializeId != Integer.MIN_VALUE) {
+          receiveDeserializeProgress(
+              pendingReceiveDeSerializations.get(deserializeId).poll(), deserializeId);
+          deserializeProgressTracker.finish(deserializeId);
+        }
       }
-    }
 
-    if (receiveProgressTracker.canProgress()) {
-      int receiveId = receiveProgressTracker.next();
-      if (receiveId != Integer.MIN_VALUE) {
-        receiveProgress(pendingReceiveMessagesPerSource.get(receiveId));
-        receiveProgressTracker.finish(receiveId);
+      if (receiveProgressTracker.canProgress()) {
+        int receiveId = receiveProgressTracker.next();
+        if (receiveId != Integer.MIN_VALUE) {
+          receiveProgress(pendingReceiveMessagesPerSource.get(receiveId));
+          receiveProgressTracker.finish(receiveId);
+        }
       }
+    } finally {
+      lock.unlock();
     }
   }
 

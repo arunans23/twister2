@@ -14,6 +14,7 @@ package edu.iu.dsc.tws.comms.mpi.io.reduce;
 import java.util.logging.Logger;
 
 import edu.iu.dsc.tws.comms.api.ReduceFunction;
+import edu.iu.dsc.tws.comms.mpi.io.PartitionData;
 
 public class ReduceStreamingPartialReceiver extends ReduceStreamingReceiver {
   private static final Logger LOG = Logger.getLogger(
@@ -26,6 +27,9 @@ public class ReduceStreamingPartialReceiver extends ReduceStreamingReceiver {
 
   @Override
   public boolean handleMessage(int source, Object message, int flags, int dest) {
+    PartitionData data = (PartitionData) message;
+    LOG.info(String.format("%d Emitting partil data: src %d target %d id %d",
+        executor, source, dest, data.getId()));
     return this.operation.sendPartial(source, message, flags, dest);
   }
 }

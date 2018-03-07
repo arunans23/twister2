@@ -23,6 +23,7 @@ import edu.iu.dsc.tws.comms.api.DataFlowOperation;
 import edu.iu.dsc.tws.comms.api.MessageReceiver;
 import edu.iu.dsc.tws.comms.api.ReduceFunction;
 import edu.iu.dsc.tws.comms.mpi.MPIContext;
+import edu.iu.dsc.tws.comms.mpi.io.PartitionData;
 
 public abstract class ReduceStreamingReceiver implements MessageReceiver {
   private static final Logger LOG = Logger.getLogger(ReduceStreamingReceiver.class.getName());
@@ -30,14 +31,14 @@ public abstract class ReduceStreamingReceiver implements MessageReceiver {
   protected ReduceFunction reduceFunction;
   // lets keep track of the messages
   // for each task we need to keep track of incoming messages
-  protected Map<Integer, Map<Integer, Queue<Object>>> messages = new HashMap<>();
+  protected Map<Integer, Map<Integer, ArrayBlockingQueue<Object>>> messages = new HashMap<>();
   protected Map<Integer, Map<Integer, Integer>> counts = new HashMap<>();
   protected int executor;
   protected int count = 0;
   protected DataFlowOperation operation;
   protected int sendPendingMax = 128;
   protected int destination;
-  private Queue<Object> reducedValues;
+  private Map<Integer, Queue<Object>> reducedValues;
   private int onMessageAttempts = 0;
   private Map<Integer, Map<Integer, Integer>> totalCounts = new HashMap<>();
 
@@ -55,22 +56,23 @@ public abstract class ReduceStreamingReceiver implements MessageReceiver {
     this.executor = op.getTaskPlan().getThisExecutor();
     this.operation = op;
     this.sendPendingMax = MPIContext.sendPendingMax(cfg);
-    this.reducedValues = new ArrayBlockingQueue<>(sendPendingMax);
+    this.reducedValues = new HashMap<>();
+    LOG.info("Send pendinmax ****** : " + sendPendingMax);
 
     for (Map.Entry<Integer, List<Integer>> e : expectedIds.entrySet()) {
-      Map<Integer, Queue<Object>> messagesPerTask = new HashMap<>();
+      Map<Integer, ArrayBlockingQueue<Object>> messagesPerTask = new HashMap<>();
       Map<Integer, Integer> countsPerTask = new HashMap<>();
       Map<Integer, Integer> totalCountsPerTask = new HashMap<>();
 
       for (int i : e.getValue()) {
-        messagesPerTask.put(i, new ArrayBlockingQueue<>(sendPendingMax * 4));
+        messagesPerTask.put(i, new ArrayBlockingQueue<>(sendPendingMax));
         countsPerTask.put(i, 0);
         totalCountsPerTask.put(i, 0);
       }
 
       LOG.fine(String.format("%d Final Task %d receives from %s",
           executor, e.getKey(), e.getValue().toString()));
-
+      reducedValues.put(e.getKey(), new ArrayBlockingQueue<>(sendPendingMax));
       messages.put(e.getKey(), messagesPerTask);
       counts.put(e.getKey(), countsPerTask);
       totalCounts.put(e.getKey(), totalCountsPerTask);
@@ -78,18 +80,24 @@ public abstract class ReduceStreamingReceiver implements MessageReceiver {
   }
 
   @Override
-  public boolean onMessage(int source, int path, int target, int flags, Object object) {
+  public synchronized boolean onMessage(int source, int path,
+                                        int target, int flags, Object object) {
     // add the object to the map
     boolean canAdd = true;
-    Queue<Object> m = messages.get(target).get(source);
+    ArrayBlockingQueue<Object> m = messages.get(target).get(source);
     Integer c = counts.get(target).get(source);
-    if (m.size() >= sendPendingMax * 4) {
+    if (m.remainingCapacity() == 0) {
       canAdd = false;
 //      LOG.info(String.format("%d ADD FALSE", executor));
       onMessageAttempts++;
     } else {
       onMessageAttempts = 0;
-      m.offer(object);
+      PartitionData data = (PartitionData) object;
+      if (!m.offer(object)) {
+        throw new RuntimeException("Failed to offer");
+      }
+      LOG.info(String.format("%d Received message src %d target %d id %d",
+          executor, source, target, data.getId()));
       counts.get(target).put(source, c + 1);
 
       Integer tc = totalCounts.get(target).get(source);
@@ -102,13 +110,14 @@ public abstract class ReduceStreamingReceiver implements MessageReceiver {
   private int progressAttempts = 0;
 
   @Override
-  public void progress() {
+  public synchronized void progress() {
     for (int t : messages.keySet()) {
       boolean canProgress = true;
       // now check weather we have the messages for this source
-      Map<Integer, Queue<Object>> messagePerTarget = messages.get(t);
+      Map<Integer, ArrayBlockingQueue<Object>> messagePerTarget = messages.get(t);
       Map<Integer, Integer> countsPerTarget = counts.get(t);
       Map<Integer, Integer> totalCountMap = totalCounts.get(t);
+      Queue<Object> reducedValuesForTarget = reducedValues.get(t);
 //      if (onMessageAttempts > 1000000 || progressAttempts > 1000000) {
 //        LOG.info(String.format("%d REDUCE %s %s", executor, counts, totalCountMap));
 //      }
@@ -116,35 +125,47 @@ public abstract class ReduceStreamingReceiver implements MessageReceiver {
 
       while (canProgress) {
         boolean found = true;
-        for (Map.Entry<Integer, Queue<Object>> e : messagePerTarget.entrySet()) {
+        for (Map.Entry<Integer, ArrayBlockingQueue<Object>> e : messagePerTarget.entrySet()) {
           if (e.getValue().size() == 0) {
             found = false;
             canProgress = false;
           }
         }
-        if (found && reducedValues.size() < sendPendingMax) {
+        if (found && reducedValuesForTarget.size() < sendPendingMax) {
           Object previous = null;
-          for (Map.Entry<Integer, Queue<Object>> e : messagePerTarget.entrySet()) {
+          for (Map.Entry<Integer, ArrayBlockingQueue<Object>> e : messagePerTarget.entrySet()) {
             if (previous == null) {
               previous = e.getValue().poll();
+              if (previous == null) {
+                throw new RuntimeException("We shouldn't have null values");
+              }
             } else {
               Object current = e.getValue().poll();
+              if (current == null) {
+                throw new RuntimeException("We shouldn't have null values");
+              }
               previous = reduceFunction.reduce(previous, current);
             }
           }
           if (previous != null) {
-            reducedValues.offer(previous);
+            if (!reducedValuesForTarget.offer(previous)) {
+              throw new RuntimeException("We should have enough space");
+            }
+          } else {
+            throw new RuntimeException("Found by not calling reduce");
           }
           progressAttempts = 0;
         } else {
           progressAttempts++;
         }
 
-        if (reducedValues.size() > 0) {
-          Object previous = reducedValues.peek();
+        if (reducedValuesForTarget.size() > 0) {
+          Object previous = reducedValuesForTarget.peek();
           boolean handle = handleMessage(t, previous, 0, destination);
           if (handle) {
-            reducedValues.poll();
+            if (reducedValuesForTarget.poll() == null) {
+              throw new RuntimeException("Poll should remove an elelment");
+            }
             for (Map.Entry<Integer, Integer> e : countsPerTarget.entrySet()) {
               Integer i = e.getValue();
               countsPerTarget.put(e.getKey(), i - 1);

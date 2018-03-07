@@ -5,3 +5,4 @@ network.mpi.buffer.size: 1024000
 network.mpi.sendBuffer.count: 16
 network.mpi.receiveBuffer.count: 16
 network.channel.mpi.pending.size: 1024
+network.mpi.send.pending.max: 4

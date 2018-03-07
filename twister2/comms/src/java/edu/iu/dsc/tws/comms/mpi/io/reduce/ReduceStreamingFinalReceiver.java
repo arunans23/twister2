@@ -13,13 +13,18 @@ package edu.iu.dsc.tws.comms.mpi.io.reduce;
 
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 import edu.iu.dsc.tws.common.config.Config;
 import edu.iu.dsc.tws.comms.api.DataFlowOperation;
 import edu.iu.dsc.tws.comms.api.ReduceFunction;
 import edu.iu.dsc.tws.comms.api.ReduceReceiver;
+import edu.iu.dsc.tws.comms.mpi.io.PartitionData;
 
 public class ReduceStreamingFinalReceiver extends ReduceStreamingReceiver {
+  private static final Logger LOG = Logger.getLogger(
+      ReduceStreamingPartialReceiver.class.getName());
+
   private ReduceReceiver reduceReceiver;
 
   public ReduceStreamingFinalReceiver(ReduceFunction function, ReduceReceiver receiver) {
@@ -35,6 +40,9 @@ public class ReduceStreamingFinalReceiver extends ReduceStreamingReceiver {
 
   @Override
   public boolean handleMessage(int source, Object message, int flags, int dest) {
+    PartitionData data = (PartitionData) message;
+    LOG.info(String.format("%d Emitting final data: src %d target %d id %d",
+        executor, source, dest, data.getId()));
     return reduceReceiver.receive(source, message);
   }
 }
